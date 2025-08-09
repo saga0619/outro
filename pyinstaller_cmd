@@ -1,1 +1,2 @@
 python3 -m PyInstaller --onefile .\main.py --add-data "mainwindow.ui;."
+python3 -m PyInstaller --onefile --windowed --add-data "resource/mainwindow.ui;resource" main.py

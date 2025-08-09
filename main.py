@@ -6,11 +6,13 @@ import json, pathlib
 # ──────────────────────────────────────────────────────────────
 # Driver 클래스는 별도 driver.py에 그대로 넣어 두었다고 가정
 from drivers.motor_driver import Driver, CNT2RAD, RAD2DEG, ZERO_POS
+from drivers.dynamixel.dynamixel_driver import DynamixelDriver, VELOCITY_CONTROL_MODE, POSITION_CONTROL_MODE, EXTENDED_POSITION_CONTROL_MODE
 # ──────────────────────────────────────────────────────────────
 
 from src.schedule_command import parse_schedule, Command
 from src.motor_worker import MotorWorker
 from src.ardu_worker import ArduinoWorker
+from src.dynamixel_worker import DynamixelWorker
 
 def app_dir() -> pathlib.Path:
     """exe가 있는 폴더(개발 중에는 소스 폴더)"""
@@ -25,6 +27,7 @@ def resource_path(relative: str) -> pathlib.Path:
 
 OFFSET_FILE = app_dir() / "offset.json"
 SCHEDULE_FILE = app_dir() / "schedule.txt"
+CONFIG_FILE = app_dir() / "config.json"
 
 
 
@@ -53,24 +56,40 @@ class QTextBrowserHandler(logging.Handler):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        # .ui 파일 로드 (resource 폴더)
-        ui_path = pathlib.Path(__file__).parent / "resource" / "mainwindow.ui"
+        # .ui 파일 로드 (exe에 포함된 리소스 파일 접근)
+        ui_path = resource_path("resource/mainwindow.ui")
         uic.loadUi(ui_path, self)
 
         # 내부 상태
         self.drv: Driver | None = None
         self.motor_worker: MotorWorker | None = None  # 워커 스레드
         self.arduino_worker: ArduinoWorker | None = None  # Arduino 워커 스레드
+        self.dynamixel_driver: DynamixelDriver | None = None  # Dynamixel 드라이버
+        self.dynamixel_worker: DynamixelWorker | None = None  # Dynamixel 워커 스레드
 
         self.connected = False
         self.arduino_connected = False
+        self.dynamixel_connected = False
 
         self.schedule_text = self.scheduleload()
         self.base_schedule = parse_schedule(self.schedule_text)
         self.cycle_period = self.base_schedule[-1].t if self.base_schedule else 0
 
-        self.saved_offset = self.offsetload()
+        # Config 로드 및 초기화
+        self.config = self.load_config()
+        self.saved_offset = self.config.get("zoffset", 0)
         self.lineEdit.setText(str(self.saved_offset))  # 초기 오프셋 표시
+        
+        # Ring position 초기값 설정 - config에서 불러온 값으로 GUI 업데이트
+        ring_positions = self.config.get("ring_positions", {})
+        if hasattr(self, 'lineEdit_ringpos1'):
+            ring1_value = ring_positions.get("ring1", 0.0)
+            self.lineEdit_ringpos1.setText(str(ring1_value))
+            logging.info(f"Ring Position 1 loaded from config: {ring1_value}°")
+        if hasattr(self, 'lineEidit_ringpos2'):  # UI에서 오타가 있다면 그대로 사용
+            ring2_value = ring_positions.get("ring2", 0.0)
+            self.lineEidit_ringpos2.setText(str(ring2_value))
+            logging.info(f"Ring Position 2 loaded from config: {ring2_value}°")
 
         # 타이머: 60 Hz
         self.timer = QTimer(self)
@@ -130,6 +149,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self, 'pushButton_ledcmd'):
             self.pushButton_ledcmd.setEnabled(False)
 
+        # Dynamixel 관련 UI 설정
+        self.setup_dynamixel_ui()
+        
+        # Ring Connect 버튼 연결
+        if hasattr(self, 'pushButton_ringc'):
+            self.pushButton_ringc.clicked.connect(self.on_ringc_clicked)
+
     def scheduleload(self) -> str:
         """앱 시작 시 호출 schedule.txt 전체를 문자열로 반환"""
         if SCHEDULE_FILE.exists():
@@ -155,6 +181,26 @@ class MainWindow(QtWidgets.QMainWindow):
                 logging.warning(f"offset load error: {e}")
         return 0        # 기본값
 
+    def load_config(self) -> dict:
+        """config.json 파일 로드"""
+        if not CONFIG_FILE.exists():
+            raise FileNotFoundError(f"Configuration file not found: {CONFIG_FILE}")
+        
+        try:
+            with CONFIG_FILE.open() as f:
+                return json.load(f)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load config file: {e}")
+
+    def save_config(self, config: dict):
+        """config.json 파일 저장"""
+        try:
+            with CONFIG_FILE.open("w") as f:
+                json.dump(config, f, indent=2)
+            logging.info("Configuration saved to config.json")
+        except Exception as e:
+            logging.error(f"Error saving config: {e}")
+
     def start_motor_worker(self):
         """워커 스레드 시작"""
         if self.motor_worker is None:
@@ -172,9 +218,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self.motor_worker = None
             logging.info("Motor worker stopped")
 
-    def start_arduino_worker(self, port="COM4"):
+    def start_arduino_worker(self):
         """Arduino 워커 스레드 시작"""
         if self.arduino_worker is None:
+            # config에서 Arduino 포트 가져오기
+            ports = self.config.get("ports", {})
+            port = ports.get("arduino")
+            
+            if not port:
+                logging.error("Arduino port not configured in config.json")
+                return False
+            
             self.arduino_worker = ArduinoWorker(port=port)
             if self.arduino_worker.connect():
                 self.arduino_worker.start()
@@ -198,6 +252,31 @@ class MainWindow(QtWidgets.QMainWindow):
             self.arduino_worker = None
             self.arduino_connected = False
             logging.info("Arduino worker stopped")
+
+    def start_dynamixel_worker(self):
+        """Dynamixel 워커 스레드 시작"""
+        if self.dynamixel_worker is None and self.dynamixel_driver is not None:
+            # config에서 모터 ID 가져오기
+            motor_id = self.config.get("dynamixel", {}).get("motor_id", 1)
+            
+            self.dynamixel_worker = DynamixelWorker(self.dynamixel_driver, motor_id, update_rate=20.0)
+            self.dynamixel_worker.start()
+            logging.info(f"Dynamixel worker started for motor {motor_id}")
+            return True
+        else:
+            if self.dynamixel_worker is not None:
+                logging.warning("Dynamixel worker already running")
+            else:
+                logging.error("Dynamixel driver not available")
+            return False
+    
+    def stop_dynamixel_worker(self):
+        """Dynamixel 워커 스레드 중지"""
+        if self.dynamixel_worker is not None:
+            self.dynamixel_worker.stop()
+            self.dynamixel_worker.join()
+            self.dynamixel_worker = None
+            logging.info("Dynamixel worker stopped")
 
     def setup_arduino_ui(self):
         """Arduino UI 요소 설정"""
@@ -224,6 +303,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self.label_sw2.setText("OFF")
             # self.label_sw2.setStyleSheet("background-color: gray; color: white; padding: 2px;")
 
+    def setup_dynamixel_ui(self):
+        """Dynamixel UI 요소 설정"""
+        # Ring position 버튼들 연결
+        if hasattr(self, 'pushButton_ringp1'):
+            self.pushButton_ringp1.clicked.connect(self.on_ringp1_clicked)
+            self.pushButton_ringp1.setEnabled(False)  # 초기 비활성화
+        
+        if hasattr(self, 'pushButton_ringp2'):
+            self.pushButton_ringp2.clicked.connect(self.on_ringp2_clicked)
+            self.pushButton_ringp2.setEnabled(False)  # 초기 비활성화
+        
+        if hasattr(self, 'pushButton_ringpos_save'):
+            self.pushButton_ringpos_save.clicked.connect(self.on_ringpos_save_clicked)
+
     def setup_logging(self):
         """로깅 시스템 설정"""
         # QTextBrowser가 있는지 확인하고 로깅 핸들러 설정
@@ -245,6 +338,76 @@ class MainWindow(QtWidgets.QMainWindow):
             logging.info("Logging system initialized with QTextBrowser")
         else:
             logging.warning("textBrowser not found, using console logging")
+
+    def connect_dynamixel(self):
+        """Dynamixel 연결"""
+        try:
+            # config에서 포트와 통신속도 가져오기
+            ports = self.config.get("ports", {})
+            baudrates = self.config.get("baudrates", {})
+            
+            port = ports.get("dynamixel")
+            baudrate = baudrates.get("dynamixel")
+            
+            if not port or not baudrate:
+                raise ValueError("Dynamixel port or baudrate not configured in config.json")
+            
+            self.dynamixel_driver = DynamixelDriver(device_name=port, baudrate=baudrate)
+            self.dynamixel_driver.connect()
+            
+            # 모터 스캔
+            found_motors = self.dynamixel_driver.scan_motors()
+            if found_motors:
+                # 토크 활성화
+                for motor in found_motors:
+                    self.dynamixel_driver.enable_torque(motor['id'])
+                
+                self.dynamixel_connected = True
+                logging.info(f"Dynamixel connected on {port} at {baudrate} baud: {len(found_motors)} motors found")
+                
+                # Dynamixel 워커 시작
+                self.start_dynamixel_worker()
+                
+                # Ring position 버튼들 활성화
+                if hasattr(self, 'pushButton_ringp1'):
+                    self.pushButton_ringp1.setEnabled(True)
+                if hasattr(self, 'pushButton_ringp2'):
+                    self.pushButton_ringp2.setEnabled(True)
+                
+                return True
+            else:
+                logging.error("No Dynamixel motors found")
+                return False
+                
+        except Exception as e:
+            logging.error(f"Dynamixel connection failed: {e}")
+            self.dynamixel_driver = None
+            return False
+
+    def disconnect_dynamixel(self):
+        """Dynamixel 연결 해제"""
+        # Dynamixel 워커 중지
+        self.stop_dynamixel_worker()
+        
+        if self.dynamixel_driver is not None:
+            try:
+                # 모든 모터의 토크 비활성화
+                for motor_id in self.dynamixel_driver.connected_motors.keys():
+                    self.dynamixel_driver.disable_torque(motor_id)
+                
+                self.dynamixel_driver.disconnect()
+                self.dynamixel_driver = None
+                self.dynamixel_connected = False
+                
+                # Ring position 버튼들 비활성화
+                if hasattr(self, 'pushButton_ringp1'):
+                    self.pushButton_ringp1.setEnabled(False)
+                if hasattr(self, 'pushButton_ringp2'):
+                    self.pushButton_ringp2.setEnabled(False)
+                
+                logging.info("Dynamixel disconnected")
+            except Exception as e:
+                logging.error(f"Error disconnecting Dynamixel: {e}")
 
     def on_motoron_clicked(self):
         """Motor On/Off 버튼 핸들러"""
@@ -284,20 +447,62 @@ class MainWindow(QtWidgets.QMainWindow):
             switch_states = status['switch_states']
             
             if hasattr(self, 'label_sw1'):
-                sw1_state = bool(switch_states & 0x40)  # 6
+                sw1_state = bool(switch_states & 0x80)  # 7
                 self.label_sw1.setText("ON" if sw1_state else "OFF")
+
+                if hasattr(self, 'prev_sw1_state'):
+                    if sw1_state and self.prev_sw1_state is not sw1_state:
+                        self.on_ringp1_clicked()
+
+                self.prev_sw1_state = sw1_state
+
                 # self.label_sw1.setStyleSheet(
                 #     "background-color: blue; color: white; padding: 2px;" if sw1_state
                 #     else "background-color: gray; color: white; padding: 2px;"
                 # )
             
             if hasattr(self, 'label_sw2'):
-                sw2_state = bool(switch_states & 0x80)  # 7
+                sw2_state = bool(switch_states & 0xF0)  # 7
                 self.label_sw2.setText("ON" if sw2_state else "OFF")
                 # self.label_sw2.setStyleSheet(
                 #     "background-color: blue; color: white; padding: 2px;" if sw2_state
                 #     else "background-color: gray; color: white; padding: 2px;"
                 # )
+
+    def update_dynamixel_status_display(self, status):
+        """Dynamixel 상태를 GUI에 업데이트"""
+        # Ring 연결 상태 표시
+        if hasattr(self, 'label_ring_status'):
+            if status.get('connected', False):
+                self.label_ring_status.setText("ON")
+            else:
+                self.label_ring_status.setText("NO")
+        
+        # 현재 각도 표시
+        if hasattr(self, 'label_ring_angle'):
+            angle = status.get('angle', 0.0)
+            self.label_ring_angle.setText(f"{angle:+7.1f}°")
+        
+        # 이동 상태 표시
+        if hasattr(self, 'label_ring_moving'):
+            moving = status.get('moving', False)
+            self.label_ring_moving.setText("●" if moving else "")
+        
+        # 온도 표시
+        if hasattr(self, 'label_ring_temp'):
+            temperature = status.get('temperature', 0)
+            self.label_ring_temp.setText(f"{temperature}°C")
+        
+        # 전압 표시
+        if hasattr(self, 'label_ring_voltage'):
+            voltage = status.get('voltage', 0.0)
+            self.label_ring_voltage.setText(f"{voltage:.1f}V")
+        
+        # Revolution 표시 (position / 4096)
+        if hasattr(self, 'label_ring_position'):
+            position = status.get('position', 0)
+            revolution = position / 4096.0
+            self.label_ring_position.setText(f"{revolution:+7.3f}")
 
     
     # ─────────────────────────────────────────────────────────
@@ -305,13 +510,23 @@ class MainWindow(QtWidgets.QMainWindow):
     def on_connect_clicked(self):
         if not self.connected:
             try:
-                self.drv = Driver()
+                # config에서 포트와 통신속도 가져오기
+                ports = self.config.get("ports", {})
+                baudrates = self.config.get("baudrates", {})
+                
+                motor_port = ports.get("motor_driver")
+                motor_baudrate = baudrates.get("motor_driver")
+                
+                if not motor_port or not motor_baudrate:
+                    raise ValueError("Motor driver port or baudrate not configured in config.json")
+                
+                self.drv = Driver(port=motor_port, baudrate=motor_baudrate)
                 self.drv.connect()
                 self.drv.zoffset = self.saved_offset  # 저장된 오프셋 적용
                 self.connected = True
                 self.t0 = time.perf_counter()
                 self.label_connect.setText("ON")
-                logging.info("Driver connected")
+                logging.info(f"Driver connected on {motor_port} at {motor_baudrate} baud")
                 self.pushButton_connect.setText("DISCONNECT")
                 self.start_motor_worker()
             except Exception as e:
@@ -409,13 +624,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def on_zoffset_save(self):
         try:
+            # config에 zoffset 업데이트
+            self.config["zoffset"] = int(self.drv.zoffset)
+            self.save_config(self.config)
+            
+            # 기존 offset.json도 호환성을 위해 유지 (선택사항)
             with OFFSET_FILE.open("w") as f:
                 json.dump({"zoffset": int(self.drv.zoffset)}, f)
-            logging.info(f"Z Offset saved: {self.drv.zoffset} cnt")
-            # QtWidgets.QMessageBox.information(self, "Save Offset", "저장 완료!")
+                
+            logging.info(f"Z Offset saved to config.json: {self.drv.zoffset} cnt")
         except Exception as e:
             logging.error(f"Error saving offset: {e}")
-            # QtWidgets.QMessageBox.critical(self, "Save Offset", str(e))
 
     def on_arduino_connect_clicked(self):
         """Arduino 연결/해제 버튼 핸들러"""
@@ -515,6 +734,128 @@ class MainWindow(QtWidgets.QMainWindow):
             logging.warning("Arduino worker not available")
 
     # ─────────────────────────────────────────────────────────
+    # Dynamixel 관련 핸들러
+    def on_ringp1_clicked(self):
+        """Ring Position 1 버튼 핸들러 - DynamixelWorker를 통한 이동"""
+        if not self.dynamixel_connected or self.dynamixel_worker is None:
+            # Dynamixel 연결 시도
+            if not self.connect_dynamixel():
+                QtWidgets.QMessageBox.critical(self, "Dynamixel Error", "Failed to connect to Dynamixel motors")
+                return
+        
+        try:
+            # lineEdit_ringpos1에서 목표 각도 값 가져오기
+            if hasattr(self, 'lineEdit_ringpos1'):
+                angle_text = self.lineEdit_ringpos1.text()
+                target_angle = float(angle_text) % 360  # 0-360 범위로 정규화
+                
+                # config에서 속도 가져오기
+                velocity = self.config.get("dynamixel", {}).get("velocity", 100)
+                
+                # Extended Position Control 모드 설정
+                self.dynamixel_worker.set_operating_mode(EXTENDED_POSITION_CONTROL_MODE)
+                
+                # 워커를 통해 이동 명령 전송
+                self.dynamixel_worker.move_to_angle(target_angle, velocity)
+                
+                logging.info(f"Ring Position 1 command sent: {target_angle}° at velocity {velocity}")
+                
+            else:
+                logging.error("lineEdit_ringpos1 not found")
+                
+        except ValueError:
+            logging.error("Invalid angle value for Ring Position 1")
+            QtWidgets.QMessageBox.warning(self, "Input Error", "Please enter a valid angle (0-360)")
+        except Exception as e:
+            logging.error(f"Error moving Ring Position 1: {e}")
+
+    def on_ringp2_clicked(self):
+        """Ring Position 2 버튼 핸들러 - DynamixelWorker를 통한 이동"""
+        if not self.dynamixel_connected or self.dynamixel_worker is None:
+            # Dynamixel 연결 시도
+            if not self.connect_dynamixel():
+                QtWidgets.QMessageBox.critical(self, "Dynamixel Error", "Failed to connect to Dynamixel motors")
+                return
+        
+        try:
+            # lineEidit_ringpos2에서 목표 각도 값 가져오기
+            if hasattr(self, 'lineEidit_ringpos2'):
+                angle_text = self.lineEidit_ringpos2.text()
+                target_angle = float(angle_text) % 360  # 0-360 범위로 정규화
+                
+                # config에서 속도 가져오기
+                velocity = self.config.get("dynamixel", {}).get("velocity", 100)
+                
+                # Extended Position Control 모드 설정
+                self.dynamixel_worker.set_operating_mode(EXTENDED_POSITION_CONTROL_MODE)
+                
+                # 워커를 통해 이동 명령 전송
+                self.dynamixel_worker.move_to_angle(target_angle, velocity)
+                
+                logging.info(f"Ring Position 2 command sent: {target_angle}° at velocity {velocity}")
+                
+            else:
+                logging.error("lineEidit_ringpos2 not found")
+                
+        except ValueError:
+            logging.error("Invalid angle value for Ring Position 2")
+            QtWidgets.QMessageBox.warning(self, "Input Error", "Please enter a valid angle (0-360)")
+        except Exception as e:
+            logging.error(f"Error moving Ring Position 2: {e}")
+
+    def on_ringpos_save_clicked(self):
+        """Ring Position Save 버튼 핸들러"""
+        try:
+            # 현재 설정값들을 config에 업데이트
+            ring1_angle = 0.0
+            ring2_angle = 0.0
+            
+            if hasattr(self, 'lineEdit_ringpos1'):
+                ring1_angle = float(self.lineEdit_ringpos1.text())
+            
+            if hasattr(self, 'lineEidit_ringpos2'):
+                ring2_angle = float(self.lineEidit_ringpos2.text())
+            
+            # Z offset도 함께 업데이트
+            current_zoffset = self.saved_offset
+            if self.drv is not None:
+                current_zoffset = int(self.drv.zoffset)
+            
+            # config 업데이트
+            self.config["zoffset"] = current_zoffset
+            self.config["ring_positions"]["ring1"] = ring1_angle
+            self.config["ring_positions"]["ring2"] = ring2_angle
+            
+            # config.json에 저장
+            self.save_config(self.config)
+            
+            logging.info(f"Configuration saved - Z Offset: {current_zoffset}, Ring1: {ring1_angle}°, Ring2: {ring2_angle}°")
+            
+        except ValueError:
+            logging.error("Invalid values for ring positions")
+            QtWidgets.QMessageBox.warning(self, "Input Error", "Please enter valid angle values")
+        except Exception as e:
+            logging.error(f"Error saving ring positions: {e}")
+
+    def on_ringc_clicked(self):
+        """Ring Connect 버튼 핸들러 - Dynamixel 연결/해제"""
+        if not self.dynamixel_connected:
+            # Dynamixel 연결 시도
+            if self.connect_dynamixel():
+                self.pushButton_ringc.setText("RING DISCON")
+                logging.info("Dynamixel connected successfully via Ring Connect button")
+                
+                
+            else:
+                QtWidgets.QMessageBox.critical(self, "Dynamixel Error", "Failed to connect to Dynamixel motors")
+        else:
+            # Dynamixel 연결 해제
+            self.disconnect_dynamixel()
+            self.pushButton_ringc.setText("RING CON")
+            logging.info("Dynamixel disconnected via Ring Connect button")
+
+
+    # ─────────────────────────────────────────────────────────
     # 60 Hz 주기 함수
     def on_tick(self):
         # 1) 연결상태 업데이트
@@ -567,6 +908,20 @@ class MainWindow(QtWidgets.QMainWindow):
             except Exception as e:
                 logging.error(f"Arduino status update error: {e}")
 
+        # 3) Dynamixel 상태 업데이트
+        if self.dynamixel_worker is not None:
+            try:
+                dynamixel_status = self.dynamixel_worker.get_status()
+                self.update_dynamixel_status_display(dynamixel_status)
+                
+                # 상세 로그는 debug 레벨로만 출력
+                logging.debug(f"Dynamixel Status: Connected={dynamixel_status['connected']}, "
+                            f"Angle={dynamixel_status['angle']:.1f}°, "
+                            f"Moving={dynamixel_status['moving']}, "
+                            f"Temperature={dynamixel_status['temperature']}°C")
+            except Exception as e:
+                logging.error(f"Dynamixel status update error: {e}")
+
     def closeEvent(self, event):
         """애플리케이션 종료 시 정리 작업"""
         logging.info("Application closing, stopping workers...")
@@ -579,6 +934,9 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Arduino worker 정리
         self.stop_arduino_worker()
+        
+        # Dynamixel 정리
+        self.disconnect_dynamixel()
         
         event.accept()
         logging.info("Application closed")

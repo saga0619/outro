@@ -14,7 +14,7 @@ def basic_control_example():
     print("=== Dynamixel 기본 제어 예제 ===")
     
     # 드라이버 초기화 (포트명과 통신속도는 환경에 맞게 수정)
-    driver = DynamixelDriver(device_name='COM3', baudrate=57600)
+    driver = DynamixelDriver(device_name='COM5', baudrate=57600)
     
     try:
         # 연결
@@ -36,8 +36,10 @@ def basic_control_example():
         driver.set_profile_velocity(motor_id, 100)  # 속도 설정
         driver.set_profile_acceleration(motor_id, 50)  # 가속도 설정
         
+        START_POS = 0
+        END_POS = 1024*100
         # 위치 이동 예제
-        positions = [1024, 2048, 3072, 2048]  # 90도, 180도, 270도, 180도
+        positions = [START_POS, END_POS, START_POS]  # 90도, 180도, 270도, 180도
         
         for i, pos in enumerate(positions):
             print(f"위치 {i+1}: {pos} (약 {driver.position_to_angle(pos):.1f}도)")
@@ -47,10 +49,10 @@ def basic_control_example():
             while driver.is_moving(motor_id):
                 current_pos = driver.get_present_position(motor_id)
                 print(f"  현재 위치: {current_pos} (약 {driver.position_to_angle(current_pos):.1f}도)")
-                time.sleep(0.1)
+                time.sleep(2)
             
             print(f"  위치 {pos} 도달 완료")
-            time.sleep(1)
+            time.sleep(4)
         
         # 토크 비활성화
         driver.disable_torque(motor_id)

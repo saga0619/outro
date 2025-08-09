@@ -42,7 +42,7 @@ def test_driver():
         print(f"   ✗ DynamixelDriver 클래스 생성 실패: {e}")
         return False
 
-def test_connection(port='COM3', baudrate=57600):
+def test_connection(port='COM5', baudrate=57600):
     """실제 연결 테스트"""
     print(f"4. 실제 연결 테스트 (포트: {port}, 속도: {baudrate})...")
     

@@ -1,0 +1,21 @@
+{
+  "zoffset": -618,
+  "ring_positions": {
+    "ring1": 0.0,
+    "ring2": 180.0
+  },
+  "ports": {
+    "motor_driver": "COM3",
+    "arduino": "COM4",
+    "dynamixel": "COM5"
+  },
+  "baudrates": {
+    "motor_driver": 38400,
+    "arduino": 115200,
+    "dynamixel": 57600
+  },
+  "dynamixel": {
+    "motor_id": 1,
+    "velocity": 30
+  }
+}

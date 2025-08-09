@@ -8,9 +8,9 @@ import json, pathlib
 from drivers.motor_driver import Driver, CNT2RAD, RAD2DEG, ZERO_POS
 # ──────────────────────────────────────────────────────────────
 
-from schedule_command import parse_schedule, Command
-from motor_worker import MotorWorker
-from ardu_worker import ArduinoWorker
+from src.schedule_command import parse_schedule, Command
+from src.motor_worker import MotorWorker
+from src.ardu_worker import ArduinoWorker
 
 def app_dir() -> pathlib.Path:
     """exe가 있는 폴더(개발 중에는 소스 폴더)"""
@@ -53,8 +53,9 @@ class QTextBrowserHandler(logging.Handler):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        # .ui 파일 로드 (동일 폴더)
-        uic.loadUi(pathlib.Path(__file__).with_name("mainwindow.ui"), self)
+        # .ui 파일 로드 (resource 폴더)
+        ui_path = pathlib.Path(__file__).parent / "resource" / "mainwindow.ui"
+        uic.loadUi(ui_path, self)
 
         # 내부 상태
         self.drv: Driver | None = None

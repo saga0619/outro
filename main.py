@@ -1,6 +1,6 @@
 import sys, time, logging, pathlib
 from PyQt5 import QtWidgets, uic
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QTextCursor
 import json, pathlib
 # ──────────────────────────────────────────────────────────────
@@ -9,7 +9,7 @@ from driver import Driver, CNT2RAD, RAD2DEG, ZERO_POS
 # ──────────────────────────────────────────────────────────────
 
 from schedule_command import parse_schedule, Command
-from worker import MotorWorker
+from motor_worker import MotorWorker
 from ardu_worker import ArduinoWorker
 
 def app_dir() -> pathlib.Path:
@@ -33,19 +33,20 @@ ACC_DEF = 100    # 기본 가속도(도/초^2)
 
 
 # ── QTextBrowser 로깅 핸들러 ────────────────────────────────────
+class LogSignalEmitter(QObject):
+    log_signal = pyqtSignal(str)
+
 class QTextBrowserHandler(logging.Handler):
     def __init__(self, text_browser):
         super().__init__()
         self.text_browser = text_browser
+        self.signal_emitter = LogSignalEmitter()
+        self.signal_emitter.log_signal.connect(self.text_browser.append)
         
     def emit(self, record):
         msg = self.format(record)
-        # GUI 스레드에서 안전하게 텍스트 추가
-        self.text_browser.append(msg)
-        # 자동 스크롤을 위해 커서를 끝으로 이동
-        cursor = self.text_browser.textCursor()
-        cursor.movePosition(QTextCursor.End)
-        self.text_browser.setTextCursor(cursor)
+        # 시그널을 통해 GUI 스레드에서 안전하게 텍스트 추가
+        self.signal_emitter.log_signal.emit(msg)
 
 
 # ── 메인 윈도우 ────────────────────────────────────────────────
@@ -57,7 +58,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # 내부 상태
         self.drv: Driver | None = None
-        self.worker: MotorWorker | None = None  # 워커 스레드
+        self.motor_worker: MotorWorker | None = None  # 워커 스레드
         self.arduino_worker: ArduinoWorker | None = None  # Arduino 워커 스레드
 
         self.connected = False
@@ -70,9 +71,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.saved_offset = self.offsetload()
         self.lineEdit.setText(str(self.saved_offset))  # 초기 오프셋 표시
 
-        # 타이머: 10 Hz
+        # 타이머: 60 Hz
         self.timer = QTimer(self)
-        self.timer.setInterval(100)
+        self.timer.setInterval(17)  # 1000ms / 60Hz ≈ 16.67ms
         self.timer.timeout.connect(self.on_tick)
         self.timer.start()
 
@@ -108,8 +109,25 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setup_arduino_ui()
         self.setup_logging()
 
-        # Arduino worker 자동 시작
-        self.start_arduino_worker()
+        # Arduino 연결 버튼 연결
+        self.pushButton_arduino_connect.clicked.connect(self.on_arduino_connect_clicked)
+        
+        # LED 제어 버튼들 연결
+        if hasattr(self, 'pushButton_ledon'):
+            self.pushButton_ledon.clicked.connect(self.on_ledon_clicked)
+        if hasattr(self, 'pushButton_ledoff'):
+            self.pushButton_ledoff.clicked.connect(self.on_ledoff_clicked)
+        if hasattr(self, 'pushButton_ledcmd'):
+            self.pushButton_ledcmd.clicked.connect(self.on_ledcmd_clicked)
+        
+        # Arduino 관련 버튼들 초기 비활성화
+        self.pushButton_motoron.setEnabled(False)
+        if hasattr(self, 'pushButton_ledon'):
+            self.pushButton_ledon.setEnabled(False)
+        if hasattr(self, 'pushButton_ledoff'):
+            self.pushButton_ledoff.setEnabled(False)
+        if hasattr(self, 'pushButton_ledcmd'):
+            self.pushButton_ledcmd.setEnabled(False)
 
     def scheduleload(self) -> str:
         """앱 시작 시 호출 schedule.txt 전체를 문자열로 반환"""
@@ -136,21 +154,21 @@ class MainWindow(QtWidgets.QMainWindow):
                 logging.warning(f"offset load error: {e}")
         return 0        # 기본값
 
-    def start_worker(self):
+    def start_motor_worker(self):
         """워커 스레드 시작"""
-        if self.worker is None:
-            self.worker = MotorWorker(self.drv, self.base_schedule, self.cycle_period)
-            self.worker.start()
+        if self.motor_worker is None:
+            self.motor_worker = MotorWorker(self.drv, self.base_schedule, self.cycle_period)
+            self.motor_worker.start()
             logging.info("Motor worker started")
         else:
             logging.warning("Motor worker already running")
     
-    def stop_worker(self):
+    def stop_motor_worker(self):
         """워커 스레드 중지"""
-        if self.worker is not None:
-            self.worker.stop()
-            self.worker.join()
-            self.worker = None
+        if self.motor_worker is not None:
+            self.motor_worker.stop()
+            self.motor_worker.join()
+            self.motor_worker = None
             logging.info("Motor worker stopped")
 
     def start_arduino_worker(self, port="COM4"):
@@ -195,15 +213,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 label = getattr(self, label_name)
                 self.led_labels.append(label)
                 label.setText("OFF")
-                label.setStyleSheet("background-color: gray; color: white; padding: 2px;")
+                # label.setStyleSheet("background-color: gray; color: white; padding: 2px;")
         
         # 스위치 라벨 초기화
         if hasattr(self, 'label_sw1'):
             self.label_sw1.setText("OFF")
-            self.label_sw1.setStyleSheet("background-color: gray; color: white; padding: 2px;")
+            # self.label_sw1.setStyleSheet("background-color: gray; color: white; padding: 2px;")
         if hasattr(self, 'label_sw2'):
             self.label_sw2.setText("OFF")
-            self.label_sw2.setStyleSheet("background-color: gray; color: white; padding: 2px;")
+            # self.label_sw2.setStyleSheet("background-color: gray; color: white; padding: 2px;")
 
     def setup_logging(self):
         """로깅 시스템 설정"""
@@ -236,10 +254,10 @@ class MainWindow(QtWidgets.QMainWindow):
             
             if hasattr(self, 'pushButton_motoron'):
                 self.pushButton_motoron.setText("MOTOR OFF" if self.motor_on else "MOTOR ON")
-                self.pushButton_motoron.setStyleSheet(
-                    "background-color: red; color: white;" if self.motor_on 
-                    else "background-color: green; color: white;"
-                )
+                # self.pushButton_motoron.setStyleSheet(
+                #     "background-color: red; color: white;" if self.motor_on 
+                #     else "background-color: green; color: white;"
+                # )
             
             logging.info(f"Motor {'ON' if self.motor_on else 'OFF'}")
         else:
@@ -247,36 +265,38 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def update_arduino_status_display(self, status):
         """Arduino 상태를 GUI에 업데이트"""
+
+        # print(status)
         # LED 상태 업데이트
         if 'received_brightness' in status and len(self.led_labels) >= 6:
             brightness_values = status['received_brightness']
             for i, (label, brightness) in enumerate(zip(self.led_labels, brightness_values)):
-                if brightness > 128:  # 밝기가 50% 이상이면 ON
-                    label.setText(f"LED{i+1}: ON")
-                    label.setStyleSheet("background-color: green; color: white; padding: 2px;")
-                else:
-                    label.setText(f"LED{i+1}: OFF")
-                    label.setStyleSheet("background-color: gray; color: white; padding: 2px;")
+                # if brightness > 128:  # 밝기가 50% 이상이면 ON
+                #     label.setText(f"{brightness}")
+                #     # label.setStyleSheet("background-color: green; color: white; padding: 2px;")
+                # else:
+                label.setText(f"{brightness}")
+                    # label.setStyleSheet("background-color: gray; color: white; padding: 2px;")
         
         # 스위치 상태 업데이트
         if 'switch_states' in status:
             switch_states = status['switch_states']
             
             if hasattr(self, 'label_sw1'):
-                sw1_state = bool(switch_states & 0x01)  # 첫 번째 비트
-                self.label_sw1.setText("SW1: ON" if sw1_state else "SW1: OFF")
-                self.label_sw1.setStyleSheet(
-                    "background-color: blue; color: white; padding: 2px;" if sw1_state
-                    else "background-color: gray; color: white; padding: 2px;"
-                )
+                sw1_state = bool(switch_states & 0x40)  # 6
+                self.label_sw1.setText("ON" if sw1_state else "OFF")
+                # self.label_sw1.setStyleSheet(
+                #     "background-color: blue; color: white; padding: 2px;" if sw1_state
+                #     else "background-color: gray; color: white; padding: 2px;"
+                # )
             
             if hasattr(self, 'label_sw2'):
-                sw2_state = bool(switch_states & 0x02)  # 두 번째 비트
-                self.label_sw2.setText("SW2: ON" if sw2_state else "SW2: OFF")
-                self.label_sw2.setStyleSheet(
-                    "background-color: blue; color: white; padding: 2px;" if sw2_state
-                    else "background-color: gray; color: white; padding: 2px;"
-                )
+                sw2_state = bool(switch_states & 0x80)  # 7
+                self.label_sw2.setText("ON" if sw2_state else "OFF")
+                # self.label_sw2.setStyleSheet(
+                #     "background-color: blue; color: white; padding: 2px;" if sw2_state
+                #     else "background-color: gray; color: white; padding: 2px;"
+                # )
 
     
     # ─────────────────────────────────────────────────────────
@@ -289,15 +309,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.drv.zoffset = self.saved_offset  # 저장된 오프셋 적용
                 self.connected = True
                 self.t0 = time.perf_counter()
-                self.label_connect.setText("YES")
+                self.label_connect.setText("ON")
                 logging.info("Driver connected")
                 self.pushButton_connect.setText("DISCONNECT")
-                self.start_worker()
+                self.start_motor_worker()
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Connect Error", str(e))
         else:
             # 이미 연결됨 → 해제
-            self.stop_worker()
+            self.stop_motor_worker()
 
             self.drv.client.close()
             self.connected = False
@@ -317,62 +337,62 @@ class MainWindow(QtWidgets.QMainWindow):
         
     def on_homing_clicked(self):
         if self.connected:
-            with self.worker.lock:
+            with self.motor_worker.lock:
                 self.drv.homing()
 
     def on_runloop_clicked(self):
         if not self.connected:
             return
 
-        self.worker.looping = not self.worker.looping
+        self.motor_worker.looping = not self.motor_worker.looping
 
         self.loop_cmd_time = time.perf_counter()
-        self.pushButton_runloop.setText("STOP LOOP" if self.worker.looping else "RUN LOOP")
-        if self.worker.looping:
+        self.pushButton_runloop.setText("STOP LOOP" if self.motor_worker.looping else "RUN LOOP")
+        if self.motor_worker.looping:
 
-            if self.worker is not None:
-                self.worker.start_loop()
+            if self.motor_worker is not None:
+                self.motor_worker.start_loop()
         else:
-            if self.worker is not None:
-                self.worker.stop_loop()
+            if self.motor_worker is not None:
+                self.motor_worker.stop_loop()
 
     def on_estop_clicked(self):
         if self.connected:
-            with self.worker.lock:
+            with self.motor_worker.lock:
                 self.drv.estop()
             
-            self.worker.looping = False  # M2 버튼 클릭 시 루프 중지
+            self.motor_worker.looping = False  # M2 버튼 클릭 시 루프 중지
 
     def on_gozero_clicked(self):
         if self.connected:
-            with self.worker.lock:
+            with self.motor_worker.lock:
                 self.drv.move(0.0, VEL_DEF, ACC_DEF, 0)
-            self.worker.looping = False  # M2 버튼 클릭 시 루프 중지
+            self.motor_worker.looping = False  # M2 버튼 클릭 시 루프 중지
 
     def on_m0_clicked(self):
         if self.connected:
-            with self.worker.lock:
+            with self.motor_worker.lock:
                 self.drv.move(self.drv.qdeg - 0.1, VEL_DEF, ACC_DEF, 0)
-            self.worker.looping = False  # M2 버튼 클릭 시 루프 중지
+            self.motor_worker.looping = False  # M2 버튼 클릭 시 루프 중지
     
     def on_m1_clicked(self):
         if self.connected:
-            with self.worker.lock:
+            with self.motor_worker.lock:
                 self.drv.move(self.drv.qdeg - 0.05, VEL_DEF, ACC_DEF, 0)
-            self.worker.looping = False  # M2 버튼 클릭 시 루프 중지
+            self.motor_worker.looping = False  # M2 버튼 클릭 시 루프 중지
             
 
     def on_m2_clicked(self):
         if self.connected:
-            with self.worker.lock:
+            with self.motor_worker.lock:
                 self.drv.move(self.drv.qdeg + 0.05, VEL_DEF, ACC_DEF, 0)
-            self.worker.looping = False  # M2 버튼 클릭 시 루프 중지
+            self.motor_worker.looping = False  # M2 버튼 클릭 시 루프 중지
 
     def on_m3_clicked(self):
         if self.connected:
-            with self.worker.lock:
+            with self.motor_worker.lock:
                 self.drv.move(self.drv.qdeg + 0.1, VEL_DEF, ACC_DEF, 0)
-            self.worker.looping = False  # M2 버튼 클릭 시 루프 중지
+            self.motor_worker.looping = False  # M2 버튼 클릭 시 루프 중지
 
 
     def on_zoffset_clicked(self):
@@ -393,19 +413,116 @@ class MainWindow(QtWidgets.QMainWindow):
             logging.info(f"Z Offset saved: {self.drv.zoffset} cnt")
             # QtWidgets.QMessageBox.information(self, "Save Offset", "저장 완료!")
         except Exception as e:
-            print(f"Error saving offset: {e}")
+            logging.error(f"Error saving offset: {e}")
             # QtWidgets.QMessageBox.critical(self, "Save Offset", str(e))
 
+    def on_arduino_connect_clicked(self):
+        """Arduino 연결/해제 버튼 핸들러"""
+        if not self.arduino_connected:
+            # Arduino 연결 시도
+            if self.start_arduino_worker():
+                self.pushButton_arduino_connect.setText("SERIAL DISCONNECT")
+                self.label_arduino_status.setText("ON")
+                self.pushButton_motoron.setEnabled(True)
+                # LED 제어 버튼들 활성화
+                if hasattr(self, 'pushButton_ledon'):
+                    self.pushButton_ledon.setEnabled(True)
+                if hasattr(self, 'pushButton_ledoff'):
+                    self.pushButton_ledoff.setEnabled(True)
+                if hasattr(self, 'pushButton_ledcmd'):
+                    self.pushButton_ledcmd.setEnabled(True)
+                logging.info("Arduino connected successfully")
+            else:
+                logging.error("Failed to connect Arduino")
+                QtWidgets.QMessageBox.critical(self, "Arduino Connect Error", "Failed to connect to Arduino on COM4")
+        else:
+            # Arduino 연결 해제
+            self.stop_arduino_worker()
+            self.pushButton_arduino_connect.setText("SERIAL CONNECT")
+            self.label_arduino_status.setText("NO")
+            self.pushButton_motoron.setEnabled(False)
+            # LED 제어 버튼들 비활성화
+            if hasattr(self, 'pushButton_ledon'):
+                self.pushButton_ledon.setEnabled(False)
+            if hasattr(self, 'pushButton_ledoff'):
+                self.pushButton_ledoff.setEnabled(False)
+            if hasattr(self, 'pushButton_ledcmd'):
+                self.pushButton_ledcmd.setEnabled(False)
+            # 모터 상태 초기화
+            if hasattr(self, 'motor_on'):
+                self.motor_on = False
+                self.pushButton_motoron.setText("MOTOR ON")
+            logging.info("Arduino disconnected")
+
+    def on_ledon_clicked(self):
+        """LED ON 버튼 핸들러 - 모든 LED를 255로 설정"""
+        if self.arduino_worker is not None:
+            self.arduino_worker.set_all_leds(255)
+            logging.info("All LEDs turned ON (255)")
+        else:
+            logging.warning("Arduino worker not available")
+
+    def on_ledoff_clicked(self):
+        """LED OFF 버튼 핸들러 - 모든 LED를 0으로 설정"""
+        if self.arduino_worker is not None:
+            self.arduino_worker.set_all_leds(0)
+            logging.info("All LEDs turned OFF (0)")
+        else:
+            logging.warning("Arduino worker not available")
+
+    def on_ledcmd_clicked(self):
+        """LED CMD 버튼 핸들러 - 특정 LED의 밝기 설정"""
+        if self.arduino_worker is not None:
+            try:
+                # SpinBox에서 LED 번호 가져오기 (1-6을 0-5로 변환)
+                if hasattr(self, 'spinBox_led'):
+                    led_number = self.spinBox_led.value() - 1  # 1-6 -> 0-5
+                else:
+                    logging.error("spinBox_led not found")
+                    return
+                
+                # LineEdit에서 밝기 값 가져오기
+                if hasattr(self, 'lineEdit_led'):
+                    brightness_text = self.lineEdit_led.text()
+                    brightness = int(brightness_text)
+                    
+                    # 범위 체크
+                    if not (0 <= brightness <= 255):
+                        logging.error("Brightness value must be between 0 and 255")
+                        QtWidgets.QMessageBox.warning(self, "Input Error", "Brightness value must be between 0 and 255")
+                        return
+                    
+                    if not (0 <= led_number <= 5):
+                        logging.error("LED number must be between 1 and 6")
+                        QtWidgets.QMessageBox.warning(self, "Input Error", "LED number must be between 1 and 6")
+                        return
+                    
+                    # LED 밝기 설정
+                    self.arduino_worker.set_led_brightness(led_number, brightness)
+                    logging.info(f"LED {led_number + 1} brightness set to {brightness}")
+                    
+                else:
+                    logging.error("lineEdit_led not found")
+                    return
+                    
+            except ValueError:
+                logging.error("Invalid brightness value")
+                QtWidgets.QMessageBox.warning(self, "Input Error", "Please enter a valid number (0-255)")
+            except Exception as e:
+                logging.error(f"Error setting LED brightness: {e}")
+        else:
+            logging.warning("Arduino worker not available")
+
     # ─────────────────────────────────────────────────────────
-    # 10 Hz 주기 함수
+    # 60 Hz 주기 함수
     def on_tick(self):
         # 1) 연결상태 업데이트
         if self.connected:
             try:
                 self.label_time.setText(f"{time.perf_counter() - self.t0:6.2f}")
 
-                with self.worker.lock:
-                    st = self.worker.stat.copy()
+                with self.motor_worker.lock:
+                    st = self.motor_worker.stat.copy()
 
                 if st:
                 # stat_word = self.drv.rd16(0x6002)
@@ -455,7 +572,7 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Motor worker 정리
         if self.connected:
-            self.stop_worker()
+            self.stop_motor_worker()
             if self.drv:
                 self.drv.client.close()
         

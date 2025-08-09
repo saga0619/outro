@@ -12,7 +12,7 @@ def test_arduino_worker():
     """Test Arduino worker functionality"""
     logging.basicConfig(level=logging.INFO)
     
-    print("Testing Arduino Worker Thread...")
+    logging.info("Testing Arduino Worker Thread...")
     
     # Create Arduino worker instance
     arduino_worker = ArduinoWorker(port="COM4", baudrate=115200, tick=0.1)

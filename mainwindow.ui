@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>760</width>
+    <width>893</width>
     <height>512</height>
    </rect>
   </property>
@@ -24,10 +24,10 @@
      </rect>
     </property>
     <property name="frameShape">
-     <enum>QFrame::Shape::StyledPanel</enum>
+     <enum>QFrame::StyledPanel</enum>
     </property>
     <property name="frameShadow">
-     <enum>QFrame::Shadow::Raised</enum>
+     <enum>QFrame::Raised</enum>
     </property>
     <widget class="QLabel" name="label_7">
      <property name="geometry">
@@ -58,7 +58,7 @@
          <string>Time</string>
         </property>
         <property name="alignment">
-         <set>Qt::AlignmentFlag::AlignCenter</set>
+         <set>Qt::AlignCenter</set>
         </property>
        </widget>
       </item>
@@ -68,7 +68,7 @@
          <string>0.0</string>
         </property>
         <property name="alignment">
-         <set>Qt::AlignmentFlag::AlignCenter</set>
+         <set>Qt::AlignCenter</set>
         </property>
        </widget>
       </item>
@@ -78,27 +78,17 @@
          <string/>
         </property>
         <property name="alignment">
-         <set>Qt::AlignmentFlag::AlignCenter</set>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLabel" name="label_13">
-        <property name="text">
-         <string/>
-        </property>
-        <property name="alignment">
-         <set>Qt::AlignmentFlag::AlignCenter</set>
+         <set>Qt::AlignCenter</set>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QLabel" name="label_14">
         <property name="text">
-         <string>Connection</string>
+         <string>Motor</string>
         </property>
         <property name="alignment">
-         <set>Qt::AlignmentFlag::AlignCenter</set>
+         <set>Qt::AlignCenter</set>
         </property>
        </widget>
       </item>
@@ -108,7 +98,37 @@
          <string>NO</string>
         </property>
         <property name="alignment">
-         <set>Qt::AlignmentFlag::AlignCenter</set>
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="label_13">
+        <property name="text">
+         <string/>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="label_24">
+        <property name="text">
+         <string>Serial</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="label_arduino_status">
+        <property name="text">
+         <string>NO</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
         </property>
        </widget>
       </item>
@@ -132,7 +152,7 @@
            <string>q (deg)</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -142,7 +162,7 @@
            <string>0.0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -156,7 +176,7 @@
            <string>cnt</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -166,7 +186,7 @@
            <string>0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -180,7 +200,7 @@
            <string>qv(°/s)</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -190,7 +210,7 @@
            <string>0.0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -204,7 +224,7 @@
            <string>Torque</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -214,7 +234,7 @@
            <string>0.0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -228,7 +248,7 @@
            <string>RDY</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -238,7 +258,7 @@
            <string/>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -252,7 +272,7 @@
            <string>RUN</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -262,7 +282,7 @@
            <string/>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -276,7 +296,7 @@
            <string>ERR</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -286,7 +306,7 @@
            <string/>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -300,7 +320,7 @@
            <string>HOM</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -310,7 +330,7 @@
            <string/>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -336,7 +356,7 @@
            <string>LED1</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -346,7 +366,7 @@
            <string>0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -360,17 +380,17 @@
            <string>LED2</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
         <item>
-         <widget class="QLabel" name="labe_led2">
+         <widget class="QLabel" name="label_led2">
           <property name="text">
            <string>0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -384,7 +404,7 @@
            <string>LED3</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -394,7 +414,7 @@
            <string>0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -408,7 +428,7 @@
            <string>LED4</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -418,7 +438,7 @@
            <string>0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -432,7 +452,7 @@
            <string>LED5</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -442,7 +462,7 @@
            <string>0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -456,7 +476,7 @@
            <string>LED6</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -466,7 +486,7 @@
            <string>0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -480,7 +500,7 @@
            <string>SW1</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -490,7 +510,7 @@
            <string>0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -504,7 +524,7 @@
            <string>SW2</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -514,7 +534,7 @@
            <string>0</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
+           <set>Qt::AlignCenter</set>
           </property>
          </widget>
         </item>
@@ -527,21 +547,21 @@
     <property name="geometry">
      <rect>
       <x>480</x>
-      <y>40</y>
-      <width>111</width>
+      <y>20</y>
+      <width>151</width>
       <height>41</height>
      </rect>
     </property>
     <property name="text">
-     <string>CONNECT</string>
+     <string>MOTOR CONNECT</string>
     </property>
    </widget>
    <widget class="QPushButton" name="pushButton_runloop">
     <property name="geometry">
      <rect>
       <x>480</x>
-      <y>140</y>
-      <width>111</width>
+      <y>170</y>
+      <width>151</width>
       <height>41</height>
      </rect>
     </property>
@@ -552,9 +572,9 @@
    <widget class="QPushButton" name="pushButton_estop">
     <property name="geometry">
      <rect>
-      <x>610</x>
-      <y>90</y>
-      <width>131</width>
+      <x>650</x>
+      <y>120</y>
+      <width>91</width>
       <height>91</height>
      </rect>
     </property>
@@ -566,8 +586,8 @@
     <property name="geometry">
      <rect>
       <x>480</x>
-      <y>90</y>
-      <width>111</width>
+      <y>120</y>
+      <width>151</width>
       <height>41</height>
      </rect>
     </property>
@@ -692,14 +712,27 @@
    <widget class="QPushButton" name="pushButton_motoron">
     <property name="geometry">
      <rect>
-      <x>610</x>
-      <y>40</y>
-      <width>131</width>
-      <height>41</height>
+      <x>650</x>
+      <y>20</y>
+      <width>91</width>
+      <height>91</height>
      </rect>
     </property>
     <property name="text">
      <string>MOTOR ON</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_arduino_connect">
+    <property name="geometry">
+     <rect>
+      <x>480</x>
+      <y>70</y>
+      <width>151</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>ARDUINO CONNECT</string>
     </property>
    </widget>
    <widget class="QTextBrowser" name="textBrowser">
@@ -710,6 +743,71 @@
       <width>721</width>
       <height>181</height>
      </rect>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_ledon">
+    <property name="geometry">
+     <rect>
+      <x>480</x>
+      <y>220</y>
+      <width>71</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>LED ON</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_ledoff">
+    <property name="geometry">
+     <rect>
+      <x>560</x>
+      <y>220</y>
+      <width>71</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>LED OFF</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="lineEdit_led">
+    <property name="geometry">
+     <rect>
+      <x>560</x>
+      <y>260</y>
+      <width>71</width>
+      <height>31</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton_ledcmd">
+    <property name="geometry">
+     <rect>
+      <x>650</x>
+      <y>260</y>
+      <width>91</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>LED CMD</string>
+    </property>
+   </widget>
+   <widget class="QSpinBox" name="spinBox_led">
+    <property name="geometry">
+     <rect>
+      <x>480</x>
+      <y>261</y>
+      <width>71</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="prefix">
+     <string>led</string>
+    </property>
+    <property name="maximum">
+     <number>5</number>
     </property>
    </widget>
   </widget>

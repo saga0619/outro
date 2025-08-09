@@ -17,7 +17,7 @@ def calculate_crc(data):
     return crc
 
 class ArduinoWorker(threading.Thread):
-    def __init__(self, port="COM4", baudrate=115200, tick=0.1):
+    def __init__(self, port="COM4", baudrate=115200, tick=0.01):
         super().__init__(daemon=True)
         self.port = port
         self.baudrate = baudrate
@@ -49,10 +49,10 @@ class ArduinoWorker(threading.Thread):
             self.ser = serial.Serial(self.port, baudrate=self.baudrate, timeout=1)
             with self.lock:
                 self.status['connected'] = True
-            logging.info(f"Arduino connected to {self.port}")
+            logging.info(f"Serial connected to {self.port}")
             return True
         except Exception as e:
-            logging.error(f"Failed to connect to Arduino: {e}")
+            logging.error(f"Failed to connect to Serial: {e}")
             with self.lock:
                 self.status['connected'] = False
             return False
@@ -63,13 +63,25 @@ class ArduinoWorker(threading.Thread):
             self.ser.close()
         with self.lock:
             self.status['connected'] = False
-        logging.info("Arduino disconnected")
+        logging.info("Serial disconnected")
     
     def set_brightness_values(self, values):
         """Set brightness values (6 bytes)"""
         if len(values) == 6:
             with self.lock:
                 self.brightness_values = values.copy()
+    
+    def set_led_brightness(self, led_index, brightness):
+        """Set specific LED brightness (led_index: 0-5, brightness: 0-255)"""
+        if 0 <= led_index <= 5 and 0 <= brightness <= 255:
+            with self.lock:
+                self.brightness_values[led_index] = brightness
+    
+    def set_all_leds(self, brightness):
+        """Set all LEDs to same brightness (brightness: 0-255)"""
+        if 0 <= brightness <= 255:
+            with self.lock:
+                self.brightness_values = [brightness] * 6
     
     def set_signal(self, signal):
         """Set signal value (0 or 1)"""
@@ -95,21 +107,12 @@ class ArduinoWorker(threading.Thread):
                 continue
                 
             try:
-                # Generate sine wave modulated brightness values
-                current_time = time.time() - self.t0
-                frequency = 0.05  # Frequency of the sine wave modulation
-                
-                # Modulate brightness values using a sine wave
-                modulated_brightness = [
-                    int(30 + 112.5 * (math.sin(2 * math.pi * frequency * current_time) + 1)) 
-                    for _ in range(6)
-                ]
-                
                 # Construct the data packet
                 with self.lock:
                     signal = self.signal
+                    brightness_data = self.brightness_values.copy()
                 
-                data = bytearray([signal]) + bytearray(modulated_brightness)
+                data = bytearray([signal]) + bytearray(brightness_data)
                 crc = calculate_crc(data)
                 data.append(crc)
                 
@@ -154,7 +157,7 @@ class ArduinoWorker(threading.Thread):
                             self.status['error_count'] += 1
                             
             except Exception as e:
-                logging.error(f"Arduino communication error: {e}")
+                logging.error(f"Serial communication error: {e}")
                 with self.lock:
                     self.status['error_count'] += 1
                     self.status['connected'] = False

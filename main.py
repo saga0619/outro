@@ -1,6 +1,7 @@
 import sys, time, logging, pathlib
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtCore import QTimer
+from PyQt5.QtGui import QTextCursor
 import json, pathlib
 # ──────────────────────────────────────────────────────────────
 # Driver 클래스는 별도 driver.py에 그대로 넣어 두었다고 가정
@@ -9,6 +10,7 @@ from driver import Driver, CNT2RAD, RAD2DEG, ZERO_POS
 
 from schedule_command import parse_schedule, Command
 from worker import MotorWorker
+from ardu_worker import ArduinoWorker
 
 def app_dir() -> pathlib.Path:
     """exe가 있는 폴더(개발 중에는 소스 폴더)"""
@@ -30,6 +32,21 @@ VEL_DEF = 2      # RPM / 입력축 : 출력축 = 1rpm : 0.086deg/s
 ACC_DEF = 100    # 기본 가속도(도/초^2)
 
 
+# ── QTextBrowser 로깅 핸들러 ────────────────────────────────────
+class QTextBrowserHandler(logging.Handler):
+    def __init__(self, text_browser):
+        super().__init__()
+        self.text_browser = text_browser
+        
+    def emit(self, record):
+        msg = self.format(record)
+        # GUI 스레드에서 안전하게 텍스트 추가
+        self.text_browser.append(msg)
+        # 자동 스크롤을 위해 커서를 끝으로 이동
+        cursor = self.text_browser.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        self.text_browser.setTextCursor(cursor)
+
 
 # ── 메인 윈도우 ────────────────────────────────────────────────
 class MainWindow(QtWidgets.QMainWindow):
@@ -41,8 +58,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # 내부 상태
         self.drv: Driver | None = None
         self.worker: MotorWorker | None = None  # 워커 스레드
+        self.arduino_worker: ArduinoWorker | None = None  # Arduino 워커 스레드
 
         self.connected = False
+        self.arduino_connected = False
 
         self.schedule_text = self.scheduleload()
         self.base_schedule = parse_schedule(self.schedule_text)
@@ -85,6 +104,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.pushButton_m2.clicked.connect(self.on_m2_clicked)
         self.pushButton_m3.clicked.connect(self.on_m3_clicked)
 
+        # Arduino UI 요소 연결
+        self.setup_arduino_ui()
+        self.setup_logging()
+
+        # Arduino worker 자동 시작
+        self.start_arduino_worker()
+
     def scheduleload(self) -> str:
         """앱 시작 시 호출 schedule.txt 전체를 문자열로 반환"""
         if SCHEDULE_FILE.exists():
@@ -126,6 +152,131 @@ class MainWindow(QtWidgets.QMainWindow):
             self.worker.join()
             self.worker = None
             logging.info("Motor worker stopped")
+
+    def start_arduino_worker(self, port="COM4"):
+        """Arduino 워커 스레드 시작"""
+        if self.arduino_worker is None:
+            self.arduino_worker = ArduinoWorker(port=port)
+            if self.arduino_worker.connect():
+                self.arduino_worker.start()
+                self.arduino_connected = True
+                logging.info(f"Arduino worker started on {port}")
+                return True
+            else:
+                self.arduino_worker = None
+                self.arduino_connected = False
+                logging.error(f"Failed to connect Arduino on {port}")
+                return False
+        else:
+            logging.warning("Arduino worker already running")
+            return False
+    
+    def stop_arduino_worker(self):
+        """Arduino 워커 스레드 중지"""
+        if self.arduino_worker is not None:
+            self.arduino_worker.stop()
+            self.arduino_worker.join()
+            self.arduino_worker = None
+            self.arduino_connected = False
+            logging.info("Arduino worker stopped")
+
+    def setup_arduino_ui(self):
+        """Arduino UI 요소 설정"""
+        # Motor on/off 버튼 연결
+        if hasattr(self, 'pushButton_motoron'):
+            self.pushButton_motoron.clicked.connect(self.on_motoron_clicked)
+            self.motor_on = False  # 모터 상태 추적
+        
+        # LED 라벨 초기화
+        self.led_labels = []
+        for i in range(1, 7):  # label_led1 ~ label_led6
+            label_name = f'label_led{i}'
+            if hasattr(self, label_name):
+                label = getattr(self, label_name)
+                self.led_labels.append(label)
+                label.setText("OFF")
+                label.setStyleSheet("background-color: gray; color: white; padding: 2px;")
+        
+        # 스위치 라벨 초기화
+        if hasattr(self, 'label_sw1'):
+            self.label_sw1.setText("OFF")
+            self.label_sw1.setStyleSheet("background-color: gray; color: white; padding: 2px;")
+        if hasattr(self, 'label_sw2'):
+            self.label_sw2.setText("OFF")
+            self.label_sw2.setStyleSheet("background-color: gray; color: white; padding: 2px;")
+
+    def setup_logging(self):
+        """로깅 시스템 설정"""
+        # QTextBrowser가 있는지 확인하고 로깅 핸들러 설정
+        if hasattr(self, 'textBrowser'):
+            # 기존 핸들러 제거
+            logger = logging.getLogger()
+            for handler in logger.handlers[:]:
+                logger.removeHandler(handler)
+            
+            # QTextBrowser 핸들러 추가
+            text_handler = QTextBrowserHandler(self.textBrowser)
+            text_handler.setFormatter(logging.Formatter(
+                '%(asctime)s - %(levelname)s - %(message)s',
+                datefmt='%H:%M:%S'
+            ))
+            logger.addHandler(text_handler)
+            logger.setLevel(logging.INFO)
+            
+            logging.info("Logging system initialized with QTextBrowser")
+        else:
+            logging.warning("textBrowser not found, using console logging")
+
+    def on_motoron_clicked(self):
+        """Motor On/Off 버튼 핸들러"""
+        if self.arduino_worker is not None:
+            self.motor_on = not self.motor_on
+            signal = 1 if self.motor_on else 0
+            self.arduino_worker.set_signal(signal)
+            
+            if hasattr(self, 'pushButton_motoron'):
+                self.pushButton_motoron.setText("MOTOR OFF" if self.motor_on else "MOTOR ON")
+                self.pushButton_motoron.setStyleSheet(
+                    "background-color: red; color: white;" if self.motor_on 
+                    else "background-color: green; color: white;"
+                )
+            
+            logging.info(f"Motor {'ON' if self.motor_on else 'OFF'}")
+        else:
+            logging.warning("Arduino worker not available")
+
+    def update_arduino_status_display(self, status):
+        """Arduino 상태를 GUI에 업데이트"""
+        # LED 상태 업데이트
+        if 'received_brightness' in status and len(self.led_labels) >= 6:
+            brightness_values = status['received_brightness']
+            for i, (label, brightness) in enumerate(zip(self.led_labels, brightness_values)):
+                if brightness > 128:  # 밝기가 50% 이상이면 ON
+                    label.setText(f"LED{i+1}: ON")
+                    label.setStyleSheet("background-color: green; color: white; padding: 2px;")
+                else:
+                    label.setText(f"LED{i+1}: OFF")
+                    label.setStyleSheet("background-color: gray; color: white; padding: 2px;")
+        
+        # 스위치 상태 업데이트
+        if 'switch_states' in status:
+            switch_states = status['switch_states']
+            
+            if hasattr(self, 'label_sw1'):
+                sw1_state = bool(switch_states & 0x01)  # 첫 번째 비트
+                self.label_sw1.setText("SW1: ON" if sw1_state else "SW1: OFF")
+                self.label_sw1.setStyleSheet(
+                    "background-color: blue; color: white; padding: 2px;" if sw1_state
+                    else "background-color: gray; color: white; padding: 2px;"
+                )
+            
+            if hasattr(self, 'label_sw2'):
+                sw2_state = bool(switch_states & 0x02)  # 두 번째 비트
+                self.label_sw2.setText("SW2: ON" if sw2_state else "SW2: OFF")
+                self.label_sw2.setStyleSheet(
+                    "background-color: blue; color: white; padding: 2px;" if sw2_state
+                    else "background-color: gray; color: white; padding: 2px;"
+                )
 
     
     # ─────────────────────────────────────────────────────────
@@ -282,6 +433,37 @@ class MainWindow(QtWidgets.QMainWindow):
         
         else:
             self.label_time.setText("--")
+
+        # 2) Arduino 상태 업데이트
+        if self.arduino_worker is not None:
+            try:
+                arduino_status = self.arduino_worker.get_status()
+                # Arduino 상태를 GUI에 업데이트
+                self.update_arduino_status_display(arduino_status)
+                
+                # 상세 로그는 debug 레벨로만 출력
+                logging.debug(f"Arduino Status: Connected={arduino_status['connected']}, "
+                            f"Digital Output={arduino_status['digital_output']}, "
+                            f"Switch States={bin(arduino_status['switch_states'])}, "
+                            f"Error Count={arduino_status['error_count']}")
+            except Exception as e:
+                logging.error(f"Arduino status update error: {e}")
+
+    def closeEvent(self, event):
+        """애플리케이션 종료 시 정리 작업"""
+        logging.info("Application closing, stopping workers...")
+        
+        # Motor worker 정리
+        if self.connected:
+            self.stop_worker()
+            if self.drv:
+                self.drv.client.close()
+        
+        # Arduino worker 정리
+        self.stop_arduino_worker()
+        
+        event.accept()
+        logging.info("Application closed")
 
 
 # ── 진입점 ─────────────────────────────────────────────────────

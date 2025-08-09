@@ -1,0 +1,8 @@
+  # t, deg, vel, acc, dwell
+  # 0.0, MOVE, 0.0, 2, 100, 0
+  # GO TO CCW
+    0.0, MOVE, 2.0, 4, 100, 0
+ # GO TO CW
+    15.0, MOVE, -2.0, 4, 100, 0
+ # RESET 
+    30.0, RESTART
